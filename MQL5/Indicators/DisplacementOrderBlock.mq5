@@ -47,6 +47,12 @@ enum ENUM_ARROW_SIZE
    HUGE_ARROW_SIZE = 4 // Huge
   };
 
+enum ENUM_BORDER_STYLE
+  {
+   BORDER_STYLE_SOLID = STYLE_SOLID, // Solid
+   BORDER_STYLE_DASH = STYLE_DASH // Dash
+  };
+
 // buffers
 //...
 
@@ -62,7 +68,9 @@ input color InpHighObColor = clrGreen; // High order block arrow color
 input color InpLowObColor = clrRed; // Low order block arrow color
 
 // constants
-const string OBJECT_PREFIX = "LITOB_";
+const string OBJECT_PREFIX = "DOB_";
+const string OBJECT_PREFIX_CONTINUATED = OBJECT_PREFIX + "CONT";
+const string OBJECT_SEP = "#";
 
 // runtime
 //...
@@ -74,14 +82,14 @@ int OnInit()
   {
    if(InpDebugEnabled)
      {
-      Print("LitOrderBlock indicator initialization started");
+      Print("DisplacementOrderBlock indicator initialization started");
      }
 
    IndicatorSetInteger(INDICATOR_DIGITS, _Digits);
 
    if(InpDebugEnabled)
      {
-      Print("LitOrderBlock indicator initialization finished");
+      Print("DisplacementOrderBlock indicator initialization finished");
      }
    return INIT_SUCCEEDED;
   }
@@ -93,7 +101,7 @@ void OnDeinit(const int reason)
   {
    if(InpDebugEnabled)
      {
-      Print("LitOrderBlock indicator deinitialization started");
+      Print("DisplacementOrderBlock indicator deinitialization started");
      }
 
    if(!MQLInfoInteger(MQL_TESTER) && !MQLInfoInteger(MQL_OPTIMIZATION) && !MQLInfoInteger(MQL_VISUAL_MODE))
@@ -107,7 +115,7 @@ void OnDeinit(const int reason)
 
    if(InpDebugEnabled)
      {
-      Print("LitOrderBlock indicator deinitialization finished");
+      Print("DisplacementOrderBlock indicator deinitialization finished");
      }
   }
 
@@ -130,18 +138,187 @@ int OnCalculate(const int rates_total,
       return rates_total;
      }
 
-   int startIndex = 1; // last closed bar
-   int endIndex = prev_calculated == 0 ? 1 : rates_total - prev_calculated + 1; // first bar shifted to the right
+   ArraySetAsSeries(time, true);
+   ArraySetAsSeries(open, true);
+   ArraySetAsSeries(high, true);
+   ArraySetAsSeries(low, true);
+   ArraySetAsSeries(close, true);
+
+   int startIndex = 3; // newest bar (right side)
+   int endIndex = prev_calculated == 0 ? rates_total - 3 : rates_total - prev_calculated + 3; // oldest bar (left side)
    if(InpDebugEnabled)
      {
       PrintFormat("RatesTotal: %i, PrevCalculated: %i, StartIndex: %i, EndIndex: %i", rates_total, prev_calculated, startIndex, endIndex);
      }
 
-   for(int i = startIndex; i < endIndex; i++)
+   for(int i = startIndex; i < endIndex; i++) // go from right to left
      {
-      //...
+      //      if(!IsSweep(high, low, i))
+      //        {
+      //         continue;
+      //        }
+      //
+      //      if(IsBullishBar(open, close, i))
+      //        {
+      //
+      //        }
+      //      else
+      //        {
+      //
+      //        }
+
+      if(IsBullishFractal(high, i))
+        {
+         if(InpDebugEnabled)
+           {
+            PrintFormat("Bullish fractal on price %f at %s on %i bar", high[i], TimeToString(time[i]), i);
+           }
+
+         if(IsBearishFvg(high, low, i))
+           {
+            DrawBox(time[i], high[i], time[i - 1], low[i], false);
+           }
+        }
+
+      if(IsBearishFractal(low, i))
+        {
+         if(InpDebugEnabled)
+           {
+            PrintFormat("Bearish fractal on price %f at %s on %i bar", low[i], TimeToString(time[i]), i);
+           }
+
+         if(IsBullishFvg(high, low, i))
+           {
+            DrawBox(time[i], low[i], time[i - 1], high[i], false);
+           }
+        }
      }
 
    return rates_total;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+bool IsSweep(const double &high[], const double &low[], int index)
+  {
+   double prevHigh = high[index - 1];
+   double prevLow = low[index - 1];
+   double currHigh = high[index];
+   double currLow = low[index];
+
+   return currHigh > prevHigh || currLow < prevLow;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+bool IsBullishBar(const double &open[], const double &close[], int index)
+  {
+   return open[index] < close[index];
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+bool IsBullishFractal(const double &high[], int index)
+  {
+   double prev = high[index + 1];
+   double curr = high[index];
+   double next = high[index - 1];
+
+   return curr > prev && curr > next;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+bool IsBearishFractal(const double &low[], int index)
+  {
+   double prev = low[index + 1];
+   double curr = low[index];
+   double next = low[index - 1];
+
+   return curr < prev && curr < next;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+bool IsBullishFvg(const double &high[], const double &low[], int index)
+  {
+   double leftHigh = high[index];
+   double leftLow = low[index];
+   double midHigh = high[index - 1];
+   double midLow = low[index - 1];
+   double rightHigh = high[index - 2];
+   double rightLow = low[index - 2];
+
+   bool hasGap = leftHigh < rightLow;
+   bool validLeft = midLow >= leftLow && midHigh >= leftHigh;
+   bool validRight = midLow <= rightLow && midHigh <= rightHigh;
+
+   return hasGap && validLeft && validRight;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+bool IsBearishFvg(const double &high[], const double &low[], int index)
+  {
+   double leftHigh = high[index];
+   double leftLow = low[index];
+   double midHigh = high[index - 1];
+   double midLow = low[index - 1];
+   double rightHigh = high[index - 2];
+   double rightLow = low[index - 2];
+
+   bool hasGap = leftLow > rightHigh;
+   bool validLeft = midHigh <= leftHigh && midHigh >= leftLow;
+   bool validRight = midLow <= rightHigh && midLow >= rightLow;
+
+   return hasGap && validLeft && validRight;
+  }
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void DrawBox(datetime leftDt, double leftPrice, datetime rightDt, double rightPrice, bool continuated)
+  {
+   color InpDownTrendColor = clrLightPink; // Down trend color
+   color InpUpTrendColor = clrLightGreen; // Up trend color
+   bool InpFill = true; // Fill solid (true) or transparent (false)
+   ENUM_BORDER_STYLE InpBoderStyle = BORDER_STYLE_SOLID; // Border line style
+   int InpBorderWidth = 2; // Border line width
+
+   string objName = (continuated ? OBJECT_PREFIX_CONTINUATED : OBJECT_PREFIX)
+                    + OBJECT_SEP
+                    + TimeToString(leftDt)
+                    + OBJECT_SEP
+                    + DoubleToString(leftPrice)
+                    + OBJECT_SEP
+                    + TimeToString(rightDt)
+                    + OBJECT_SEP
+                    + DoubleToString(rightPrice);
+
+   if(ObjectFind(0, objName) < 0)
+     {
+      ObjectCreate(0, objName, OBJ_RECTANGLE, 0, leftDt, leftPrice, rightDt, rightPrice);
+
+      ObjectSetInteger(0, objName, OBJPROP_COLOR, leftPrice < rightPrice ? InpUpTrendColor : InpDownTrendColor);
+      ObjectSetInteger(0, objName, OBJPROP_FILL, InpFill);
+      ObjectSetInteger(0, objName, OBJPROP_STYLE, InpBoderStyle);
+      ObjectSetInteger(0, objName, OBJPROP_WIDTH, InpBorderWidth);
+      ObjectSetInteger(0, objName, OBJPROP_BACK, true);
+      ObjectSetInteger(0, objName, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, objName, OBJPROP_SELECTED, false);
+      ObjectSetInteger(0, objName, OBJPROP_HIDDEN, false);
+      ObjectSetInteger(0, objName, OBJPROP_ZORDER, 0);
+
+      if(InpDebugEnabled)
+        {
+         PrintFormat("Draw box: %s", objName);
+        }
+     }
   }
 //+------------------------------------------------------------------+
