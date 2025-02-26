@@ -153,20 +153,6 @@ int OnCalculate(const int rates_total,
 
    for(int i = startIndex; i < endIndex; i++) // go from right to left
      {
-      //      if(!IsSweep(high, low, i))
-      //        {
-      //         continue;
-      //        }
-      //
-      //      if(IsBullishBar(open, close, i))
-      //        {
-      //
-      //        }
-      //      else
-      //        {
-      //
-      //        }
-
       bool InpContinueToMitigation = true;
 
       if(IsBullishFractal(high, i))
@@ -230,27 +216,6 @@ int OnCalculate(const int rates_total,
 
    return rates_total;
   }
-
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-//bool IsSweep(const double &high[], const double &low[], int index)
-//  {
-//   double prevHigh = high[index - 1];
-//   double prevLow = low[index - 1];
-//   double currHigh = high[index];
-//   double currLow = low[index];
-//
-//   return currHigh > prevHigh || currLow < prevLow;
-//  }
-
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-//bool IsBullishBar(const double &open[], const double &close[], int index)
-//  {
-//   return open[index] < close[index];
-//  }
 
 //+------------------------------------------------------------------+
 //|                                                                  |
