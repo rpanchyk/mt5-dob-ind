@@ -12,13 +12,13 @@
    The Displacement Order Block (DOB) in Smart Money Concept (SMC)
    authored by Michael J. Huddleston aka Inner Circle Trader (ICT)
    is identified by the next conditions:
-   - Current bar swepts liquidity of previous bar(s).
+   - Current bar swepts liquidity (LQ) of previous bar(s).
    - After that the fair value gap (FVG) is formed by the next bars.
    Note: The DOB is the same as the Order Block (OB)
    in Liqudity Inducement Theorem (LIT) of TradingHub community
    authored by Ali Khan aka Mr. Khan.
 
-     x  _____________
+    LQ  _____________
     -->|
    |  | |
   | | | |          OB
@@ -145,7 +145,7 @@ int OnCalculate(const int rates_total,
    ArraySetAsSeries(close, true);
 
    int startIndex = 3; // newest bar (right side)
-   int endIndex = prev_calculated == 0 ? rates_total - 3 : rates_total - prev_calculated + 3; // oldest bar (left side)
+   int endIndex = prev_calculated == 0 ? rates_total - startIndex : rates_total - prev_calculated + startIndex; // oldest bar (left side)
    if(InpDebugEnabled)
      {
       PrintFormat("RatesTotal: %i, PrevCalculated: %i, StartIndex: %i, EndIndex: %i", rates_total, prev_calculated, startIndex, endIndex);
@@ -167,6 +167,8 @@ int OnCalculate(const int rates_total,
       //
       //        }
 
+      bool InpContinueToMitigation = true;
+
       if(IsBullishFractal(high, i))
         {
          if(InpDebugEnabled)
@@ -176,7 +178,23 @@ int OnCalculate(const int rates_total,
 
          if(IsBearishFvg(high, low, i))
            {
-            DrawBox(time[i], high[i], time[i - 1], low[i], false);
+            datetime leftTime = time[i];
+            datetime rightTime = time[i - 1];
+
+            if(InpContinueToMitigation)
+              {
+               rightTime = time[0];
+               for(int j = i - 3; j > 0; j--) // Search mitigation bar (go from left to right)
+                 {
+                  if((low[i] < high[j] && low[i] >= low[j]) || (high[i] > low[j] && high[i] <= high[j]))
+                    {
+                     rightTime = time[j];
+                     break;
+                    }
+                 }
+              }
+
+            DrawBox(leftTime, high[i], rightTime, low[i], InpContinueToMitigation);
            }
         }
 
@@ -189,7 +207,23 @@ int OnCalculate(const int rates_total,
 
          if(IsBullishFvg(high, low, i))
            {
-            DrawBox(time[i], low[i], time[i - 1], high[i], false);
+            datetime leftTime = time[i];
+            datetime rightTime = time[i - 1];
+
+            if(InpContinueToMitigation)
+              {
+               rightTime = time[0];
+               for(int j = i - 3; j > 0; j--) // Search mitigation bar (go from left to right)
+                 {
+                  if((high[i] <= high[j] && high[i] > low[j]) || (low[i] >= low[j] && low[i] < high[j]))
+                    {
+                     rightTime = time[j];
+                     break;
+                    }
+                 }
+              }
+
+            DrawBox(leftTime, low[i], rightTime, high[i], InpContinueToMitigation);
            }
         }
      }
@@ -200,23 +234,23 @@ int OnCalculate(const int rates_total,
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
-bool IsSweep(const double &high[], const double &low[], int index)
-  {
-   double prevHigh = high[index - 1];
-   double prevLow = low[index - 1];
-   double currHigh = high[index];
-   double currLow = low[index];
-
-   return currHigh > prevHigh || currLow < prevLow;
-  }
+//bool IsSweep(const double &high[], const double &low[], int index)
+//  {
+//   double prevHigh = high[index - 1];
+//   double prevLow = low[index - 1];
+//   double currHigh = high[index];
+//   double currLow = low[index];
+//
+//   return currHigh > prevHigh || currLow < prevLow;
+//  }
 
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
-bool IsBullishBar(const double &open[], const double &close[], int index)
-  {
-   return open[index] < close[index];
-  }
+//bool IsBullishBar(const double &open[], const double &close[], int index)
+//  {
+//   return open[index] < close[index];
+//  }
 
 //+------------------------------------------------------------------+
 //|                                                                  |
