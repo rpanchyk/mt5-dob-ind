@@ -7,6 +7,16 @@ Indicator shows displacement order blocks in MetaTrader 5.
 - Update the list of indicators on Navigator panel.
 - Drag indicator on the chart.
 
+## Configuration
+Available settings of the indicator:
+
+![docs](docs/config.png)
+
+## Usage
+Make a trade decision using the indicator:
+
+![docs](docs/view.png)
+
 ## Contribution
 Feel free to create an issue or a pull request if any ideas.
 
