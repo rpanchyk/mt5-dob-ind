@@ -35,18 +35,10 @@
 */
 
 #property indicator_chart_window
-#property indicator_plots 0
-#property indicator_buffers 0
+#property indicator_plots 3
+#property indicator_buffers 3
 
 // types
-enum ENUM_ARROW_SIZE
-  {
-   SMALL_ARROW_SIZE = 1, // Small
-   REGULAR_ARROW_SIZE = 2, // Regular
-   BIG_ARROW_SIZE = 3, // Big
-   HUGE_ARROW_SIZE = 4 // Huge
-  };
-
 enum ENUM_BORDER_STYLE
   {
    BORDER_STYLE_SOLID = STYLE_SOLID, // Solid
@@ -54,26 +46,27 @@ enum ENUM_BORDER_STYLE
   };
 
 // buffers
-//...
+double ExtHighPriceBuffer[]; // Higher price of OB
+double ExtLowPriceBuffer[]; // Lower price of OB
+double ExtTrendBuffer[]; // Trend of OB [0: flat/unknown, -1: down, 1: up]
 
 // config
 input group "Section :: Main";
-input bool InpDebugEnabled = true; // Enable debug (verbose logging)
+input bool InpDebugEnabled = false; // Enable debug (verbose logging)
+input bool InpContinueToMitigation = true; // Continue to mitigation
 
 input group "Section :: Style";
 input bool InpVisualModeEnabled = true; // Enable visual mode
-input int InpArrowShift = 10; // Arrow shift
-input ENUM_ARROW_SIZE InpArrowSize = REGULAR_ARROW_SIZE; // Arrow size
-input color InpHighObColor = clrGreen; // High order block arrow color
-input color InpLowObColor = clrRed; // Low order block arrow color
+input color InpDownTrendColor = clrLightPink; // Down trend (bearish) color
+input color InpUpTrendColor = clrLightGreen; // Up trend (bullish) color
+input bool InpFill = true; // Fill solid (true) or transparent (false)
+input ENUM_BORDER_STYLE InpBoderStyle = BORDER_STYLE_SOLID; // Border line style
+input int InpBorderWidth = 2; // Border line width
 
 // constants
 const string OBJECT_PREFIX = "DOB_";
 const string OBJECT_PREFIX_CONTINUATED = OBJECT_PREFIX + "CONT";
 const string OBJECT_SEP = "#";
-
-// runtime
-//...
 
 //+------------------------------------------------------------------+
 //| Custom indicator initialization function                         |
@@ -86,6 +79,27 @@ int OnInit()
      }
 
    IndicatorSetInteger(INDICATOR_DIGITS, _Digits);
+
+   ArrayInitialize(ExtHighPriceBuffer, EMPTY_VALUE);
+   ArraySetAsSeries(ExtHighPriceBuffer, true);
+   SetIndexBuffer(0, ExtHighPriceBuffer, INDICATOR_DATA);
+   PlotIndexSetDouble(0, PLOT_EMPTY_VALUE, EMPTY_VALUE);
+   PlotIndexSetString(0, PLOT_LABEL, "DOB High");
+   PlotIndexSetInteger(0, PLOT_DRAW_TYPE, DRAW_NONE);
+
+   ArrayInitialize(ExtLowPriceBuffer, EMPTY_VALUE);
+   ArraySetAsSeries(ExtLowPriceBuffer, true);
+   SetIndexBuffer(1, ExtLowPriceBuffer, INDICATOR_DATA);
+   PlotIndexSetDouble(1, PLOT_EMPTY_VALUE, EMPTY_VALUE);
+   PlotIndexSetString(1, PLOT_LABEL, "DOB Low");
+   PlotIndexSetInteger(1, PLOT_DRAW_TYPE, DRAW_NONE);
+
+   ArrayInitialize(ExtTrendBuffer, EMPTY_VALUE);
+   ArraySetAsSeries(ExtTrendBuffer, true);
+   SetIndexBuffer(2, ExtTrendBuffer, INDICATOR_DATA);
+   PlotIndexSetDouble(2, PLOT_EMPTY_VALUE, EMPTY_VALUE);
+   PlotIndexSetString(2, PLOT_LABEL, "DOB Trend");
+   PlotIndexSetInteger(2, PLOT_DRAW_TYPE, DRAW_NONE);
 
    if(InpDebugEnabled)
      {
@@ -104,7 +118,19 @@ void OnDeinit(const int reason)
       Print("DisplacementOrderBlock indicator deinitialization started");
      }
 
-   if(!MQLInfoInteger(MQL_TESTER) && !MQLInfoInteger(MQL_OPTIMIZATION) && !MQLInfoInteger(MQL_VISUAL_MODE))
+   ArrayFill(ExtHighPriceBuffer, 0, ArraySize(ExtHighPriceBuffer), EMPTY_VALUE);
+   ArrayResize(ExtHighPriceBuffer, 0);
+   ArrayFree(ExtHighPriceBuffer);
+
+   ArrayFill(ExtLowPriceBuffer, 0, ArraySize(ExtLowPriceBuffer), EMPTY_VALUE);
+   ArrayResize(ExtLowPriceBuffer, 0);
+   ArrayFree(ExtLowPriceBuffer);
+
+   ArrayFill(ExtTrendBuffer, 0, ArraySize(ExtTrendBuffer), EMPTY_VALUE);
+   ArrayResize(ExtTrendBuffer, 0);
+   ArrayFree(ExtTrendBuffer);
+
+   if(!MQLInfoInteger(MQL_TESTER))
      {
       ObjectsDeleteAll(0, OBJECT_PREFIX);
       if(InpDebugEnabled)
@@ -144,17 +170,62 @@ int OnCalculate(const int rates_total,
    ArraySetAsSeries(low, true);
    ArraySetAsSeries(close, true);
 
-   int startIndex = 3; // newest bar (right side)
-   int endIndex = prev_calculated == 0 ? rates_total - startIndex : rates_total - prev_calculated + startIndex; // oldest bar (left side)
+   if(InpContinueToMitigation) // Redraw continuations
+     {
+      int total = ObjectsTotal(0, 0, OBJ_RECTANGLE);
+      for(int i = 0; i < total; i++)
+        {
+         string objName = ObjectName(0, i, 0, OBJ_RECTANGLE);
+         if(StringFind(objName, OBJECT_PREFIX_CONTINUATED) == 0)
+           {
+            string result[];
+            StringSplit(objName, StringGetCharacter(OBJECT_SEP, 0), result);
+
+            datetime leftTime = StringToTime(result[1]);
+            double leftPrice = StringToDouble(result[2]);
+            datetime rightTime = time[0];
+            double rightPrice = StringToDouble(result[4]);
+
+            bool isBullish = leftPrice < rightPrice;
+            bool isMitigated = (isBullish && rightPrice >= low[1]) || (!isBullish && rightPrice <= high[1]);
+            if(isMitigated)
+              {
+               rightTime = time[1];
+               if(ObjectDelete(0, objName))
+                 {
+                  if(InpDebugEnabled)
+                    {
+                     PrintFormat("Remove box %s", objName);
+                    }
+
+                  DrawBox(leftTime, leftPrice, rightTime, rightPrice, false);
+                 }
+              }
+            else
+              {
+               ObjectMove(0, objName, 1, rightTime, rightPrice);
+               if(InpDebugEnabled)
+                 {
+                  PrintFormat("Expand box %s", objName);
+                 }
+              }
+           }
+        }
+     }
+
+   int startIndex = 3; // Newest bar (right side)
+   int endIndex = prev_calculated == 0 ? rates_total - startIndex : rates_total - prev_calculated + startIndex; // Oldest bar (left side)
    if(InpDebugEnabled)
      {
       PrintFormat("RatesTotal: %i, PrevCalculated: %i, StartIndex: %i, EndIndex: %i", rates_total, prev_calculated, startIndex, endIndex);
      }
 
-   for(int i = startIndex; i < endIndex; i++) // go from right to left
+   for(int i = startIndex; i < endIndex; i++) // Go from right to left
      {
-      bool InpContinueToMitigation = true;
+      datetime leftTime = time[i];
+      datetime rightTime = time[i - 1];
 
+      // Bearish DOB
       if(IsBullishFractal(high, i))
         {
          if(InpDebugEnabled)
@@ -164,26 +235,36 @@ int OnCalculate(const int rates_total,
 
          if(IsBearishFvg(high, low, i))
            {
-            datetime leftTime = time[i];
-            datetime rightTime = time[i - 1];
-
-            if(InpContinueToMitigation)
+            if(InpDebugEnabled)
               {
-               rightTime = time[0];
-               for(int j = i - 3; j > 0; j--) // Search mitigation bar (go from left to right)
-                 {
-                  if((low[i] < high[j] && low[i] >= low[j]) || (high[i] > low[j] && high[i] <= high[j]))
-                    {
-                     rightTime = time[j];
-                     break;
-                    }
-                 }
+               PrintFormat("Bearish FVG at %s on %i bar", TimeToString(time[i - 1]), i - 1);
               }
 
-            DrawBox(leftTime, high[i], rightTime, low[i], InpContinueToMitigation);
+            SetBuffers(i, low[i], high[i], -1);
+
+            if(InpVisualModeEnabled)
+              {
+               if(InpContinueToMitigation)
+                 {
+                  rightTime = time[0];
+                  for(int j = i - startIndex; j > 0; j--) // Search mitigation bar (go from left to right)
+                    {
+                     if((low[i] <= high[j] && low[i] >= low[j]) || (high[i] >= low[j] && high[i] <= high[j]))
+                       {
+                        rightTime = time[j];
+                        break;
+                       }
+                    }
+                 }
+
+               DrawBox(leftTime, high[i], rightTime, low[i], InpContinueToMitigation && rightTime == time[0]);
+              }
+
+            continue;
            }
         }
 
+      // Bullish DOB
       if(IsBearishFractal(low, i))
         {
          if(InpDebugEnabled)
@@ -193,25 +274,37 @@ int OnCalculate(const int rates_total,
 
          if(IsBullishFvg(high, low, i))
            {
-            datetime leftTime = time[i];
-            datetime rightTime = time[i - 1];
-
-            if(InpContinueToMitigation)
+            if(InpDebugEnabled)
               {
-               rightTime = time[0];
-               for(int j = i - 3; j > 0; j--) // Search mitigation bar (go from left to right)
-                 {
-                  if((high[i] <= high[j] && high[i] > low[j]) || (low[i] >= low[j] && low[i] < high[j]))
-                    {
-                     rightTime = time[j];
-                     break;
-                    }
-                 }
+               PrintFormat("Bullish FVG at %s on %i bar", TimeToString(time[i - 1]), i - 1);
               }
 
-            DrawBox(leftTime, low[i], rightTime, high[i], InpContinueToMitigation);
+            SetBuffers(i, low[i], high[i], 1);
+
+            if(InpVisualModeEnabled)
+              {
+               if(InpContinueToMitigation)
+                 {
+                  rightTime = time[0];
+                  for(int j = i - startIndex; j > 0; j--) // Search mitigation bar (go from left to right)
+                    {
+                     if((high[i] <= high[j] && high[i] >= low[j]) || (low[i] >= low[j] && low[i] <= high[j]))
+                       {
+                        rightTime = time[j];
+                        break;
+                       }
+                    }
+                 }
+
+               DrawBox(leftTime, low[i], rightTime, high[i], InpContinueToMitigation && rightTime == time[0]);
+              }
+
+            continue;
            }
         }
+
+      // DOB not detected, set empty values to buffers
+      SetBuffers(i, 0, 0, 0);
      }
 
    return rates_total;
@@ -280,16 +373,27 @@ bool IsBearishFvg(const double &high[], const double &low[], int index)
   }
 
 //+------------------------------------------------------------------+
+//| Updates buffers with indicator data                              |
+//+------------------------------------------------------------------+
+void SetBuffers(int index, double highPrice, double lowPrice, double trend)
+  {
+   ExtHighPriceBuffer[index] = highPrice;
+   ExtLowPriceBuffer[index] = lowPrice;
+   ExtTrendBuffer[index] = trend;
+
+   if(InpDebugEnabled && trend != 0)
+     {
+      PrintFormat("Time: %s, ExtTrendBuffer: %f, ExtHighPriceBuffer: %f, ExtLowPriceBuffer: %f",
+                  TimeToString(iTime(_Symbol, PERIOD_CURRENT, index)), ExtTrendBuffer[index],
+                  ExtHighPriceBuffer[index], ExtLowPriceBuffer[index]);
+     }
+  }
+
+//+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
 void DrawBox(datetime leftDt, double leftPrice, datetime rightDt, double rightPrice, bool continuated)
   {
-   color InpDownTrendColor = clrLightPink; // Down trend color
-   color InpUpTrendColor = clrLightGreen; // Up trend color
-   bool InpFill = true; // Fill solid (true) or transparent (false)
-   ENUM_BORDER_STYLE InpBoderStyle = BORDER_STYLE_SOLID; // Border line style
-   int InpBorderWidth = 2; // Border line width
-
    string objName = (continuated ? OBJECT_PREFIX_CONTINUATED : OBJECT_PREFIX)
                     + OBJECT_SEP
                     + TimeToString(leftDt)
